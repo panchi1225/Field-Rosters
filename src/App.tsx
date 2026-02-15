@@ -1624,7 +1624,7 @@ if (localTime > 0 && remoteTime < localTime) return;
             </label>
           </div>
                       <button onClick={() => setIsRestoreModalOpen(true)} className="w-full mt-3 flex items-center justify-center gap-2 p-4 border-2 border-dashed border-red-200 rounded-xl hover:bg-red-50 transition-colors group">
-              <div className="text-left"><div className="font-bold text-gray-800 text-xs md:text-sm">バックアップから復元</div><div className="text-[10px] text-gray-500">データに異常が発生した場合に、直前のバックアップから復元します</div></div>
+              <div className="text-center"><div className="font-bold text-gray-800 text-xs md:text-sm">バックアップから復元</div><div className="text-[10px] text-gray-500">データに異常が発生した場合に、直前のバックアップから復元します</div></div>
             </button>
             <div className="text-[10px] text-gray-500 font-bold mt-2 text-center">{(() => { const bu = localStorage.getItem('wb_backup_last_update'); if (bu) { const info = JSON.parse(bu); return '最終更新：' + formatToJapaneseEra(info.time) + '（' + info.name + '）'; } return 'バックアップデータなし'; })()}</div>
 
