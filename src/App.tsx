@@ -215,6 +215,7 @@ const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(() =
 
   // Password Protection State
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [firebaseBackupInfo, setFirebaseBackupInfo] = useState<string>('バックアップ情報を取得中...');
   const [restorePasswordInput, setRestorePasswordInput] = useState('');
   const [restoreError, setRestoreError] = useState('');
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -288,24 +289,69 @@ const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(() =
       localStorage.setItem('wb_firebase_config', JSON.stringify(firebaseConfig));
     }
   }, [firebaseConfig]);
-  const restoreFromBackup = () => {
-    const backupPeople = localStorage.getItem('wb_backup_people');
-    const backupSites = localStorage.getItem('wb_backup_sites');
-    const backupVehicles = localStorage.getItem('wb_backup_vehicles');
-    if (backupPeople && backupSites && backupVehicles) {
-      setPeople(JSON.parse(backupPeople));
-      setSites(JSON.parse(backupSites));
-      setVehicles(JSON.parse(backupVehicles));
-      const backupLastUpdate = localStorage.getItem('wb_backup_last_update');
-if (backupLastUpdate) setLastUpdateInfo(JSON.parse(backupLastUpdate));
-      setIsRestoreModalOpen(false);
-      setRestorePasswordInput('');
-      setRestoreError('');
-      alert('バックアップからデータを復元しました。');
-    } else {
-      setRestoreError('バックアップデータが見つかりません。');
+const restoreFromBackup = async () => {
+    try {
+      const { initializeApp, getApps, getApp } = await import('firebase/app');
+      const { getFirestore, doc, getDoc } = await import('firebase/firestore');
+      let app;
+      if (getApps().length === 0) {
+        app = initializeApp(firebaseConfig, 'whiteboard-app');
+      } else {
+        app = getApp('whiteboard-app');
+      }
+      const db = getFirestore(app);
+      const docRef = doc(db, 'app_data', 'shared_board');
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.sites) setSites(JSON.parse(data.sites));
+        if (data.people) setPeople(JSON.parse(data.people));
+        if (data.vehicles) setVehicles(JSON.parse(data.vehicles));
+        if (data.lastUpdateInfo) setLastUpdateInfo(JSON.parse(data.lastUpdateInfo));
+        setIsRestoreModalOpen(false);
+        setRestorePasswordInput('');
+        setRestoreError('');
+        alert('Firebaseから最新データを復元しました。');
+      } else {
+        setRestoreError('Firebaseにデータが見つかりません。');
+      }
+    } catch (error) {
+      console.error('復元エラー:', error);
+      setRestoreError('復元中にエラーが発生しました。');
     }
   };
+    const fetchFirebaseBackupInfo = async () => {
+    try {
+      const { initializeApp, getApps, getApp } = await import('firebase/app');
+      const { getFirestore, doc, getDoc } = await import('firebase/firestore');
+      let app;
+      if (getApps().length === 0) {
+        app = initializeApp(firebaseConfig, 'whiteboard-app');
+      } else {
+        app = getApp('whiteboard-app');
+      }
+      const db = getFirestore(app);
+      const docRef = doc(db, 'app_data', 'shared_board');
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data.lastUpdateInfo) {
+          const info = JSON.parse(data.lastUpdateInfo);
+          setFirebaseBackupInfo('最終更新：' + formatToJapaneseEra(info.time) + '（' + info.name + '）');
+        } else {
+          setFirebaseBackupInfo('バックアップデータなし');
+        }
+      } else {
+        setFirebaseBackupInfo('バックアップデータなし');
+      }
+    } catch (error) {
+      console.error('バックアップ情報取得エラー:', error);
+      setFirebaseBackupInfo('情報取得に失敗しました');
+    }
+  };
+  fetchFirebaseBackupInfo();
+
+
   const checkIfAllocationChanged = () => {
     const peopleChanged = initialPeopleSnapshot !== JSON.stringify(people);
     const sitesChanged = initialSitesSnapshot !== JSON.stringify(sites);
@@ -1626,7 +1672,7 @@ if (localTime > 0 && remoteTime < localTime) return;
                       <button onClick={() => setIsRestoreModalOpen(true)} className="w-full mt-3 flex items-center justify-center gap-2 p-4 border-2 border-dashed border-red-200 rounded-xl hover:bg-red-50 transition-colors group">
               <div className="text-center"><div className="font-bold text-gray-800 text-xs md:text-sm">バックアップから復元</div><div className="text-[10px] text-gray-500">データに異常が発生した場合に、直前のバックアップから復元します</div></div>
             </button>
-            <div className="text-[10px] text-gray-500 font-bold mt-2 text-center">{(() => { const bu = localStorage.getItem('wb_backup_last_update'); if (bu) { const info = JSON.parse(bu); return '最終更新：' + formatToJapaneseEra(info.time) + '（' + info.name + '）'; } return 'バックアップデータなし'; })()}</div>
+            <div className="text-[10px] text-gray-500 font-bold mt-2 text-center">{firebaseBackupInfo}</div>
 
         </div>
             {isRestoreModalOpen && (
