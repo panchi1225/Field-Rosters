@@ -1106,7 +1106,7 @@ if (localTime > 0 && remoteTime < localTime) return;
         <div className="flex flex-col gap-3">
           <div className="flex gap-3">
             <button onClick={() => { setPeople(prev => prev.map(p => p.id === lunchConfirmTarget.id ? { ...p, hasLunch: true, lunchOrder: '事務所' } : p)); setLunchConfirmTarget(null); }} className="flex-1 py-3 px-4 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700">事務所</button>
-            <button onClick={() => { setPeople(prev => prev.map(p => p.id === lunchConfirmTarget.id ? { ...p, hasLunch: true, lunchOrder: '現場' } : p)); setLunchConfirmTarget(null); }} className="flex-1 py-3 px-4 rounded-lg bg-green-600 text-white font-bold hover:bg-green-700">現場</button>
+            <button onClick={() => { setPeople(prev => prev.map(p => p.id === lunchConfirmTarget.id ? { ...p, hasLunch: true, lunchOrder: '現場' } : p)); setLunchConfirmTarget(null); }} className="flex-1 py-3 px-4 rounded-lg bg-orange-600 text-white font-bold hover:bg-orange-700">現場</button>
           </div>
           <button onClick={() => setLunchConfirmTarget(null)} className="py-3 px-4 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-100">キャンセル</button>
         </div>
