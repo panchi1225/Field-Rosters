@@ -37,6 +37,12 @@ node tests/paidLeave.browser.cjs
 
 `firestore.rules`は提供された現在の配置表用ルールに、有給ドキュメントの読み取り・作成・更新の許可を追加したものです。登録・取消にパスワードやログインは不要です。ドキュメント全体の削除は許可せず、取消は該当する登録フィールドだけを削除します。公開時はFirebase ConsoleのFirestore Database →「ルール」にこのファイルの内容を反映して「公開」してください。Firebaseルールはこのリポジトリから自動配備されません。
 
+Firebase CLIで公開する場合は、対象プロジェクトの権限があるアカウントでログインし、次を実行します。`firebase.json`はFirestoreルールだけを設定しています。
+
+```sh
+firebase deploy --only firestore:rules --project field-rosters-pro
+```
+
 既存の配置表のJSONバックアップには、有給の独立した共有ドキュメントは含まれません。配置表の復元・インポートは有給データを変更しません。
 
 `source`への変更を取り込んだ後、`npm run build`で生成した`dist/`を既存の公開手順で`main`へ反映してください。ソースへのPR作成だけでは公開中のアプリは更新されません。
