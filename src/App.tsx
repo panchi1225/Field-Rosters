@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings, Users, Briefcase, ChevronLeft, Trash2, Plus, LayoutDashboard, ArrowLeftRight, Utensils, Car, Truck, X, Coffee, MapPin, CheckCircle2, ChevronDown, ChevronRight, Ban, Search, Cloud, Download, Upload, Save, AlertCircle, Copy, Check, Lock, CheckCircle, AlertTriangle, Maximize, Minimize } from 'lucide-react';
+import { Settings, Users, Briefcase, ChevronLeft, Trash2, Plus, LayoutDashboard, ArrowLeftRight, Utensils, Car, Truck, X, Coffee, MapPin, CheckCircle2, ChevronDown, ChevronRight, Ban, Search, Cloud, Download, Upload, Save, AlertCircle, Copy, Check, Lock, CheckCircle, AlertTriangle, Maximize, Minimize, CalendarDays } from 'lucide-react';
 import { Person, Site, Role, ViewMode, Vehicle, FirebaseConfig } from './types';
 import { INITIAL_PEOPLE, INITIAL_SITES, INITIAL_VEHICLES, ROLE_LABELS } from './constants';
+import PaidLeaveCalendar from './PaidLeaveCalendar';
+import { usePaidLeave } from './usePaidLeave';
+import { allocationConflicts, formatLeaveDate, nextAllocationDate, paidLeaveKey, peopleOnLeave } from './paidLeave';
 
 // Special ID for "Yasumi" (Day Off)
 const YASUMI_SITE_ID = 'yasumi';
@@ -74,6 +77,7 @@ interface PersonCardProps {
   isSelected?: boolean;
   isDimmed?: boolean; // For allocation mode locking
   isCompact?: boolean; // For all-in-one view
+  paidLeaveDate?: string;
 }
 
 const PersonCard: React.FC<PersonCardProps> = ({ 
@@ -81,7 +85,8 @@ const PersonCard: React.FC<PersonCardProps> = ({
   onClick,
   isSelected = false,
   isDimmed = false,
-  isCompact = false
+  isCompact = false,
+  paidLeaveDate
 }) => {
   const fontSizeClass = getNameFontSize(person.name, isCompact);
 
@@ -102,6 +107,7 @@ const PersonCard: React.FC<PersonCardProps> = ({
         ${isCompact ? 'h-20 md:h-24 w-6 md:w-8 border-2 pt-0.5 pb-0.5 px-[1px]' : 'h-36 md:h-44 w-11 md:w-14 border-[3px] md:border-4 pt-1 pb-1 px-0.5 m-0.5'}
       `}
     >
+      {paidLeaveDate && <span title={`${formatLeaveDate(paidLeaveDate)}は有給休暇です`} className="absolute -top-3 left-0 right-0 rounded bg-amber-200 border border-amber-500 text-amber-950 text-[9px] font-bold text-center z-10">有給</span>}
              {/* 弁当あり表示 */}
 {/* 弁当あり表示 */}
 <div className="h-2 md:h-3 flex items-center justify-center w-full mb-0.5">
@@ -168,10 +174,10 @@ return saved ? JSON.parse(saved) : [];  });
     if (saved) {
       const parsed = JSON.parse(saved) as Person[];
       return parsed.map((p) => ({ 
-        hasLunch: true, 
-        vehicleId: null,
         isDriver: false,
         ...p,
+        hasLunch: p.hasLunch ?? true,
+        vehicleId: p.vehicleId ?? null,
         siteId: p.siteId === null ? YASUMI_SITE_ID : p.siteId
       }));
     }
@@ -200,6 +206,20 @@ const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(() =
     const saved = localStorage.getItem('wb_firebase_config');
     return saved ? JSON.parse(saved) : DEFAULT_FIREBASE_CONFIG;
 });
+
+  const paidLeave = usePaidLeave(firebaseConfig);
+  const [isPaidLeaveOpen, setIsPaidLeaveOpen] = useState(false);
+  const [allocationUpdateTime, setAllocationUpdateTime] = useState(() => new Date().toISOString());
+  const [pendingLeaveCompletion, setPendingLeaveCompletion] = useState<{ name: string; date: string } | null>(null);
+  const leaveCheckDate = nextAllocationDate(allocationUpdateTime);
+  const leavePeople = peopleOnLeave(people, paidLeave.leaves, leaveCheckDate);
+  const leaveConflicts = allocationConflicts(people, paidLeave.leaves, leaveCheckDate);
+
+  useEffect(() => {
+    if (view !== 'ALLOCATION') return;
+    const timer = window.setInterval(() => setAllocationUpdateTime(new Date().toISOString()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [view]);
 
   const [isCloudConnected, setIsCloudConnected] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR'>('DISCONNECTED');
@@ -290,6 +310,7 @@ const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(() =
     }
   }, [firebaseConfig]);
 const restoreFromBackup = async () => {
+    if (!firebaseConfig) return;
     try {
       const { initializeApp, getApps, getApp } = await import('firebase/app');
       const { getFirestore, doc, getDoc } = await import('firebase/firestore');
@@ -321,6 +342,7 @@ const restoreFromBackup = async () => {
     }
   };
     const fetchFirebaseBackupInfo = async () => {
+    if (!firebaseConfig) return;
     try {
       const { initializeApp, getApps, getApp } = await import('firebase/app');
       const { getFirestore, doc, getDoc } = await import('firebase/firestore');
@@ -349,7 +371,7 @@ const restoreFromBackup = async () => {
       setFirebaseBackupInfo('情報取得に失敗しました');
     }
   };
-  fetchFirebaseBackupInfo();
+  useEffect(() => { void fetchFirebaseBackupInfo(); }, [firebaseConfig]);
 
 
   const checkIfAllocationChanged = () => {
@@ -456,7 +478,7 @@ if (localTime > 0 && remoteTime < localTime) return;
                 vehicles: JSON.stringify(vehicles),
                 lastUpdateInfo: JSON.stringify(lastUpdateInfo),
                 updatedAt: new Date().toISOString()
-            });
+            }, { merge: true });
         } catch (e) {
             console.error("Cloud save failed", e);
             setCloudStatus('ERROR');
@@ -468,6 +490,7 @@ if (localTime > 0 && remoteTime < localTime) return;
 
   // --- Handlers ---
   const handleEnterAllocation = () => {
+    setAllocationUpdateTime(new Date().toISOString());
     setInitialPeopleSnapshot(JSON.stringify(people));
     setInitialSitesSnapshot(JSON.stringify(sites));
     setView('ALLOCATION');
@@ -617,13 +640,21 @@ if (localTime > 0 && remoteTime < localTime) return;
     }
   };
 
-  const handleAllocationComplete = (name: string) => {
+  const handleAllocationComplete = (name: string, acknowledgedDate?: string) => {
+    const time = new Date().toISOString();
+    const date = nextAllocationDate(time);
+    if ((!paidLeave.ready || allocationConflicts(people, paidLeave.leaves, date).length > 0) && acknowledgedDate !== date) {
+      setAllocationUpdateTime(time);
+      setPendingLeaveCompletion({ name, date });
+      return;
+    }
+    setPendingLeaveCompletion(null);
     setIsCompletionModalOpen(false);
     setShowCompletionSuccess(name);
     
     // Record update info
     setLastUpdateInfo({
-      time: new Date().toISOString(),
+      time,
       name: name
     });
     // Auto backup
@@ -854,6 +885,7 @@ if (localTime > 0 && remoteTime < localTime) return;
                    {renderDriverLabel(p)}
                     <PersonCard 
                       person={p} 
+                      paidLeaveDate={paidLeave.leaves[paidLeaveKey(p.id, leaveCheckDate)] ? leaveCheckDate : undefined}
                       onClick={setSelectedPersonForAction} 
                       isSelected={selectedPersonForAction?.id === p.id || movingPerson?.id === p.id} 
                       isDimmed={movePhase !== 'IDLE' && movingPerson?.id !== p.id} 
@@ -925,6 +957,9 @@ if (localTime > 0 && remoteTime < localTime) return;
                )}
             </div>
             <div className="flex gap-2">
+              <button type="button" onClick={() => setIsPaidLeaveOpen(true)} className="flex items-center gap-1 md:gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-2 md:px-4 py-1.5 md:py-2 rounded-lg hover:bg-blue-100 text-xs md:text-sm font-bold">
+                <CalendarDays className="w-4 h-4 md:w-5 md:h-5" /><span>有給休暇</span>
+              </button>
               {/* 一括表示モード切替ボタン (Tablet/PC only) */}
               <button
                 type="button"
@@ -1142,6 +1177,10 @@ if (localTime > 0 && remoteTime < localTime) return;
         <h2 className="text-xl font-bold text-gray-800">設定メニュー</h2>
       </div>
       <div className="max-w-3xl mx-auto w-full p-4 md:p-6 space-y-4">
+        <button onClick={() => setIsPaidLeaveOpen(true)} className="w-full p-4 md:p-6 bg-white border border-blue-200 shadow-sm rounded-xl flex items-center gap-4 hover:bg-blue-50">
+          <CalendarDays className="w-10 h-10 text-blue-600 shrink-0" />
+          <div className="text-left"><h3 className="text-lg md:text-xl font-bold text-gray-800">有給休暇</h3><p className="text-xs md:text-sm text-gray-500">カレンダーで確認・登録（誰でも登録できます）</p></div>
+        </button>
         <button
           onClick={handleEnterAllocation}
           className="w-full py-4 md:py-6 px-4 md:px-6 bg-white border border-gray-200 shadow-sm rounded-xl flex items-center gap-4 md:gap-6 hover:bg-blue-50 hover:border-blue-200 transition-all group"
@@ -1209,6 +1248,17 @@ if (localTime > 0 && remoteTime < localTime) return;
       )}
     </div>
   );
+  const renderLeaveWarning = () => (
+    <div role={leavePeople.length || !paidLeave.ready ? 'alert' : 'status'} className={`p-3 text-xs md:text-sm border-b max-h-40 overflow-y-auto shrink-0 ${leavePeople.length || !paidLeave.ready ? 'bg-amber-50 text-amber-950 border-amber-300' : 'bg-white text-gray-600 border-gray-200'}`}>
+      <p className="font-bold flex items-center gap-2"><AlertTriangle className="w-4 h-4 shrink-0" />有給確認日：{formatLeaveDate(leaveCheckDate)}（配置完了時の更新日時の翌日）</p>
+      {!paidLeave.ready && <p className="mt-1">有給休暇の最新情報を確認できていません。接続状態を確認してください。</p>}
+      {leavePeople.length > 0 ? <>
+        <p className="mt-1">注意：{leavePeople.map(p => p.name).join('、')} は有給休暇です。</p>
+        {leaveConflicts.length > 0 && <p className="mt-1 font-bold text-red-700">現場に配置されています：{leaveConflicts.map(p => `${p.name}（${sites.find(site => site.id === p.siteId)?.name || '現場'}）`).join('、')}</p>}
+      </> : paidLeave.ready && <p className="mt-1">この日の有給休暇の登録はありません。</p>}
+    </div>
+  );
+
   const renderAllocation = () => {
     // Calculate globally assigned vehicles to filter dropdowns
     const allAssignedVehicleIds = new Set(people.map(p => p.vehicleId).filter((id): id is string => id !== null));
@@ -1237,17 +1287,21 @@ if (localTime > 0 && remoteTime < localTime) return;
                         <X className="w-4 h-4"/> 戻る
                     </button>
                 ) : (
+                  <>
+                    <button type="button" onClick={() => setIsPaidLeaveOpen(true)} className="bg-white/10 hover:bg-white/20 px-2 md:px-3 py-1.5 rounded-lg text-xs md:text-sm font-bold flex items-center gap-1 border border-white/30"><CalendarDays className="w-4 h-4" />有給休暇</button>
                     <button 
                         onClick={handleAllocationCompleteBtnClick}
                         className="bg-green-600 hover:bg-green-700 px-3 md:px-4 py-1.5 rounded-lg text-xs md:text-sm font-bold flex items-center gap-2 shadow-lg transition-all border border-green-500"
                     >
                         <CheckCircle className="w-4 h-4" /> 完了
                     </button>
+                  </>
                 )}
             </div>
           </div>
         </div>
 
+        {renderLeaveWarning()}
         {/* Board */}
         <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
           <div className="flex-1 overflow-y-auto p-3 md:p-6 bg-gray-50 border-r border-gray-200">
@@ -1345,6 +1399,7 @@ if (localTime > 0 && remoteTime < localTime) return;
                                     {renderDriverLabel(p)}
                                     <PersonCard 
                                       person={p} 
+                                      paidLeaveDate={paidLeave.leaves[paidLeaveKey(p.id, leaveCheckDate)] ? leaveCheckDate : undefined}
                                       onClick={setSelectedPersonForAction}
                                       isSelected={selectedPersonForAction?.id === p.id || movingPerson?.id === p.id}
                                       isDimmed={movePhase !== 'IDLE' && movingPerson?.id !== p.id}
@@ -1390,6 +1445,7 @@ if (localTime > 0 && remoteTime < localTime) return;
                             <X className="w-6 h-6 text-gray-500" />
                         </button>
                     </div>
+                    {paidLeave.leaves[paidLeaveKey(selectedPersonForAction.id, leaveCheckDate)] && <p role="alert" className="p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-950 text-sm font-bold">注意：{formatLeaveDate(leaveCheckDate)}は有給休暇です。</p>}
                     <div className="flex flex-col gap-3 mt-1">
                         <button onClick={startMoveProcess} className="bg-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-3">
                             <ArrowLeftRight className="w-5 h-5" />
@@ -1423,6 +1479,7 @@ if (localTime > 0 && remoteTime < localTime) return;
                             <X className="w-6 h-6 text-green-700" />
                         </button>
                     </div>
+                    {renderLeaveWarning()}
                     <div className="p-3 md:p-4 bg-white border-b border-gray-100">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 md:w-5 md:h-5 text-gray-400" />
@@ -1717,6 +1774,21 @@ if (localTime > 0 && remoteTime < localTime) return;
             return renderWhiteboard();
         }
       })()}
+
+      {isPaidLeaveOpen && <PaidLeaveCalendar people={people} leaves={paidLeave.leaves} ready={paidLeave.ready} saving={paidLeave.saving} error={paidLeave.error} onSave={paidLeave.save} onClose={() => setIsPaidLeaveOpen(false)} />}
+
+      {pendingLeaveCompletion && <div role="dialog" aria-modal="true" aria-labelledby="leave-conflict-title" className="fixed inset-0 bg-black/60 z-[160] flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-5 md:p-6 max-h-[90vh] overflow-y-auto">
+          <h3 id="leave-conflict-title" className="font-bold text-xl text-amber-900 flex items-center gap-2"><AlertTriangle />有給休暇の注意確認</h3>
+          <p className="text-sm mt-3 text-gray-700">{formatLeaveDate(pendingLeaveCompletion.date)}（更新日時の翌日）の有給休暇を確認してください。</p>
+          {!paidLeave.ready && <p role="alert" className="mt-3 p-3 bg-amber-50 text-amber-950 rounded-lg">有給休暇の最新情報を確認できていません。</p>}
+          {allocationConflicts(people, paidLeave.leaves, pendingLeaveCompletion.date).map(person => <p key={person.id} className="mt-2 p-3 bg-amber-50 text-amber-950 rounded-lg font-bold">{person.name}：有給休暇ですが、{sites.find(site => site.id === person.siteId)?.name || '現場'}に配置されています。</p>)}
+          <div className="flex flex-col sm:flex-row gap-3 mt-5">
+            <button type="button" onClick={() => { setPendingLeaveCompletion(null); setIsCompletionModalOpen(false); }} className="flex-1 border rounded-lg p-3 font-bold text-gray-700 hover:bg-gray-50">配置に戻る</button>
+            <button type="button" onClick={() => handleAllocationComplete(pendingLeaveCompletion.name, pendingLeaveCompletion.date)} className="flex-1 bg-amber-600 text-white rounded-lg p-3 font-bold hover:bg-amber-700">確認して配置を完了</button>
+          </div>
+        </div>
+      </div>}
 
       {/* Custom Confirmation Modal */}
       {confirmTarget && (

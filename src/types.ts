@@ -38,6 +38,13 @@ export interface FirebaseConfig {
   appId: string;
 }
 
+export interface PaidLeave {
+  personId: string;
+  date: string; // YYYY-MM-DD (Japan calendar date)
+}
+
+export type PaidLeaveMap = Record<string, PaidLeave>;
+
 export type ViewMode = 
   | 'WHITEBOARD'
   | 'SETTINGS_MENU'
@@ -47,3 +54,4 @@ export type ViewMode =
   | 'PERSON_MANAGEMENT'
   | 'VEHICLE_MANAGEMENT'
   | 'CLOUD_SETTINGS';
+
