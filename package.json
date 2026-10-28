@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --module commonjs --target ES2020 --skipLibCheck --outDir .test-build src/paidLeave.ts src/types.ts && node --test tests/paidLeave.test.cjs"
   },
   "keywords": [],
   "author": "",
@@ -24,3 +27,4 @@
     "vite": "^7.3.1"
   }
 }
+
