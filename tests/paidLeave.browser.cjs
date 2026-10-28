@@ -44,6 +44,13 @@ async function main() {
     for (const [key, value] of Object.entries({ wb_people: board.people, wb_sites: board.sites, wb_vehicles: board.vehicles, wb_last_update: board.lastUpdateInfo })) localStorage.setItem(key, value);
   }, { board });
   await context.route(/firestore\.googleapis\.com/, route => { errors.push('Unexpected real Firebase request'); return route.abort(); });
+  const notifications = [];
+  let rejectNotification = false;
+  await context.route('https://lineworks-proxy.paaaaanchi1225.workers.dev/**', route => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST', 'Access-Control-Allow-Headers': 'Content-Type' } });
+    notifications.push(route.request().postDataJSON());
+    return route.fulfill({ status: rejectNotification ? 500 : 200, headers: { 'Access-Control-Allow-Origin': '*' }, contentType: 'application/json', body: '{}' });
+  });
 
   const page = await context.newPage();
   const other = await context.newPage();
@@ -90,6 +97,52 @@ async function main() {
     console.log('PASS: cached data is labelled and writes are disabled until server information returns');
 
     await other.getByRole('button', { name: '有給休暇を閉じる' }).click();
+    await other.getByRole('heading', { name: '休み（1名）', exact: true }).waitFor();
+    assert.equal(await other.getByRole('button', { name: '管理者認証', exact: true }).isVisible(), true);
+    assert.equal(await other.getByRole('button', { name: 'LINE通知', exact: true }).isVisible(), true);
+    assert.equal(await other.evaluate(() => JSON.parse(localStorage.getItem('fixture_writes')).filter(write => write.path === 'app_data/shared_board').length), 0);
+    await other.getByRole('button', { name: 'LINE通知', exact: true }).click();
+    const notificationDialog = other.getByRole('dialog', { name: '📣 LINE WORKS 通知' });
+    await notificationDialog.getByLabel('通知配信パスワード').fill('wrong');
+    await notificationDialog.getByRole('button', { name: '送信', exact: true }).click();
+    await notificationDialog.getByRole('alert').filter({ hasText: 'パスワードが違います' }).waitFor();
+    assert.equal(notifications.length, 0);
+    await notificationDialog.getByLabel('通知配信パスワード').fill('4043');
+    await notificationDialog.getByRole('button', { name: '送信', exact: true }).click();
+    await notificationDialog.getByText('通知を送信しました', { exact: true }).waitFor();
+    assert.equal(notifications.length, 1);
+    assert.equal(notifications[0].title, '現場配置表通知');
+    assert.equal(notifications[0].button.url, 'https://panchi1225.github.io/Field-Rosters/');
+    assert.equal(notifications[0].text.includes('更新者：高橋'), true);
+    await notificationDialog.waitFor({ state: 'hidden' });
+    rejectNotification = true;
+    await other.getByRole('button', { name: 'LINE通知', exact: true }).click();
+    await notificationDialog.getByLabel('通知配信パスワード').fill('4043');
+    await notificationDialog.getByRole('button', { name: '送信', exact: true }).click();
+    await notificationDialog.getByRole('alert').filter({ hasText: '通知の送信に失敗しました' }).waitFor();
+    await notificationDialog.getByRole('button', { name: 'キャンセル', exact: true }).click();
+    console.log('PASS: restored LINE notification password, original destination/payload, success and failure states (delivery mocked)');
+
+    await other.getByRole('button', { name: '設定', exact: true }).click();
+    const blocked = dialog => dialog.accept();
+    other.on('dialog', blocked);
+    await other.getByRole('button', { name: /人員配置.*現場割り振り/ }).click();
+    await other.getByRole('heading', { name: '設定メニュー', exact: true }).waitFor();
+    other.off('dialog', blocked);
+    await other.locator('button').first().click();
+    const authenticate = async password => {
+      const accept = dialog => dialog.type() === 'prompt' ? dialog.accept(password) : dialog.accept();
+      other.on('dialog', accept);
+      await other.getByRole('button', { name: '管理者認証', exact: true }).click();
+      await other.getByRole('button', { name: password === '4043' ? '管理者解除' : '管理者認証', exact: true }).waitFor();
+      other.off('dialog', accept);
+    };
+    await authenticate('wrong');
+    assert.equal(await other.evaluate(() => localStorage.getItem('wb_admin_mode')), null);
+    await authenticate('4043');
+    await other.reload();
+    await other.getByRole('button', { name: '管理者解除', exact: true }).waitFor();
+    console.log('PASS: viewer cannot allocate, administrator authentication and persisted mode restored');
     await other.getByRole('button', { name: '設定', exact: true }).click();
     await other.getByRole('button', { name: /人員配置.*現場割り振り/ }).click();
     await other.getByText('佐藤', { exact: true }).click();
@@ -112,6 +165,24 @@ async function main() {
     assert.equal(await other.evaluate(() => JSON.parse(JSON.parse(localStorage.getItem('fixture_doc_app_data/shared_board')).people)[0].isDriver), true);
     assert.equal(await other.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('fixture_doc_app_data/shared_paid_leaves')).entries).length), 2);
     console.log('PASS: live leave changes preserve allocation drafts, warnings precede completion, roster saves preserve leave records');
+
+    const releaseAdmin = dialog => dialog.accept();
+    other.on('dialog', releaseAdmin);
+    await other.getByRole('button', { name: '管理者解除', exact: true }).click();
+    await other.getByRole('button', { name: '管理者認証', exact: true }).waitFor();
+    other.off('dialog', releaseAdmin);
+    assert.equal(await other.evaluate(() => localStorage.getItem('wb_admin_mode')), null);
+    await other.getByText('佐藤', { exact: true }).click();
+    await other.getByRole('button', { name: '変更する', exact: true }).click();
+    await other.waitForFunction(() => JSON.parse(JSON.parse(localStorage.getItem('fixture_doc_app_data/shared_board')).people)[0].hasLunch === false);
+    assert.equal(await other.evaluate(() => JSON.parse(JSON.parse(localStorage.getItem('fixture_doc_app_data/shared_board')).people)[0].isDriver), true);
+    console.log('PASS: administrator release and viewer lunch updates preserve the saved allocation');
+    await other.setViewportSize({ width: 375, height: 812 });
+    assert.equal(await other.getByRole('button', { name: '管理者認証', exact: true }).isVisible(), true);
+    assert.equal(await other.getByRole('button', { name: 'LINE通知', exact: true }).isVisible(), true);
+    assert.equal(await other.getByRole('button', { name: '有給休暇', exact: true }).isVisible(), true);
+    assert.equal(await other.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    console.log('PASS: restored administrator, notification, and leave controls all remain visible on mobile');
 
     fs.mkdirSync(path.resolve(__dirname, '..', 'test-results'), { recursive: true });
     await page.screenshot({ path: path.join(__dirname, '..', 'test-results/calendar-desktop.png'), fullPage: true });

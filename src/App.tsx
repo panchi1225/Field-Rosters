@@ -3,6 +3,7 @@ import { Settings, Users, Briefcase, ChevronLeft, Trash2, Plus, LayoutDashboard,
 import { Person, Site, Role, ViewMode, Vehicle, FirebaseConfig } from './types';
 import { INITIAL_PEOPLE, INITIAL_SITES, INITIAL_VEHICLES, ROLE_LABELS } from './constants';
 import PaidLeaveCalendar from './PaidLeaveCalendar';
+import LegacyHeaderControls from './LegacyHeaderControls';
 import { usePaidLeave } from './usePaidLeave';
 import { allocationConflicts, formatLeaveDate, nextAllocationDate, paidLeaveKey, peopleOnLeave } from './paidLeave';
 
@@ -191,6 +192,12 @@ return saved ? JSON.parse(saved) : [];  });
     return saved ? JSON.parse(saved) : null;
   });
   const [isInitialLoading, setIsInitialLoading] = useState(!localStorage.getItem('wb_people'));
+  const [isAdminMode, setIsAdminMode] = useState(() => localStorage.getItem('wb_admin_mode') === 'true');
+  const handleAdminChange = (enabled: boolean) => {
+    setIsAdminMode(enabled);
+    if (enabled) localStorage.setItem('wb_admin_mode', 'true');
+    else localStorage.removeItem('wb_admin_mode');
+  };
 
   // Firebase Config State
   const DEFAULT_FIREBASE_CONFIG: FirebaseConfig = {
@@ -226,6 +233,8 @@ const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(() =
   const dbRef = useRef<any>(null); // Store firestore instance
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const isRemoteUpdate = useRef(false); // Flag to prevent write loops
+  const boardVersionRef = useRef<string | null>(null);
+  const completingRef = useRef(false);
 
   // Search State
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -283,26 +292,26 @@ const [firebaseConfig, setFirebaseConfig] = useState<FirebaseConfig | null>(() =
 
   // Local Persistence
   useEffect(() => {
-    if (view === 'ALLOCATION') return;
+    if (!isAdminMode || view === 'ALLOCATION') return;
     localStorage.setItem('wb_sites', JSON.stringify(sites));
-  }, [sites, view]);
+  }, [sites, view, isAdminMode]);
 
   useEffect(() => {
-    if (view === 'ALLOCATION') return;
+    if (!isAdminMode || view === 'ALLOCATION') return;
     localStorage.setItem('wb_people', JSON.stringify(people));
-  }, [people, view]);
+  }, [people, view, isAdminMode]);
 
   useEffect(() => {
-    if (view === 'ALLOCATION') return;
+    if (!isAdminMode || view === 'ALLOCATION') return;
     localStorage.setItem('wb_vehicles', JSON.stringify(vehicles));
-  }, [vehicles, view]);
+  }, [vehicles, view, isAdminMode]);
 
   useEffect(() => {
-    if (view === 'ALLOCATION') return;
+    if (!isAdminMode || view === 'ALLOCATION') return;
     if (lastUpdateInfo) {
       localStorage.setItem('wb_last_update', JSON.stringify(lastUpdateInfo));
     }
-  }, [lastUpdateInfo, view]);
+  }, [lastUpdateInfo, view, isAdminMode]);
 
   useEffect(() => {
     if (firebaseConfig) {
@@ -413,15 +422,12 @@ const restoreFromBackup = async () => {
              if (active) {
                 // ALLOCATIONモード中は外部の更新を反映しない（編集中データを保護）
                 if (viewRef.current === 'ALLOCATION') return;
-        const remoteTime = data.updatedAt ? new Date(data.updatedAt).getTime() : 0;
-        const localUpdateInfo = localStorage.getItem('wb_last_update');
-        const localTime = localUpdateInfo ? new Date(JSON.parse(localUpdateInfo).time).getTime() : 0;
-if (localTime > 0 && remoteTime < localTime) return;
+                boardVersionRef.current = data.updatedAt || null;
                 isRemoteUpdate.current = true;
-                if (data.sites) setSites(JSON.parse(data.sites));
-                if (data.people) setPeople(JSON.parse(data.people));
-                if (data.vehicles) setVehicles(JSON.parse(data.vehicles));
-                if (data.lastUpdateInfo) setLastUpdateInfo(JSON.parse(data.lastUpdateInfo));
+                if (data.sites) { setSites(JSON.parse(data.sites)); localStorage.setItem('wb_sites', data.sites); }
+                if (data.people) { setPeople(JSON.parse(data.people)); localStorage.setItem('wb_people', data.people); }
+                if (data.vehicles) { setVehicles(JSON.parse(data.vehicles)); localStorage.setItem('wb_vehicles', data.vehicles); }
+                if (data.lastUpdateInfo) { setLastUpdateInfo(JSON.parse(data.lastUpdateInfo)); localStorage.setItem('wb_last_update', data.lastUpdateInfo); }
              }
              setIsInitialLoading(false);
           }
@@ -459,9 +465,9 @@ if (localTime > 0 && remoteTime < localTime) return;
 
   // Auto-Save to Cloud
   useEffect(() => {
-    if (!isCloudConnected || !dbRef.current) return;
-    // ALLOCATIONモード中は自動保存しない（完了ボタンでのみ保存）
-    if (view === 'ALLOCATION') return;
+    if (!isAdminMode || !isCloudConnected || !dbRef.current) return;
+    // The production app saves roster edits only in administrator management views.
+    if (!['DATA_MANAGEMENT_MENU', 'SITE_MANAGEMENT', 'PERSON_MANAGEMENT', 'VEHICLE_MANAGEMENT'].includes(view)) return;
 
     if (isRemoteUpdate.current) {
         isRemoteUpdate.current = false;
@@ -472,6 +478,10 @@ if (localTime > 0 && remoteTime < localTime) return;
     const saveData = async () => {
         try {
             const { setDoc, docRef } = dbRef.current;
+            const expectedVersion = boardVersionRef.current;
+            const { getDoc } = await import('firebase/firestore');
+            const current = await getDoc(docRef);
+            if (current.exists() && ((current.data() as { updatedAt?: string }).updatedAt || null) !== expectedVersion) return;
             await setDoc(docRef, {
                 sites: JSON.stringify(sites),
                 people: JSON.stringify(people),
@@ -486,10 +496,11 @@ if (localTime > 0 && remoteTime < localTime) return;
     };
     const timer = setTimeout(saveData, 500); 
     return () => clearTimeout(timer);
-  }, [sites, people, vehicles, lastUpdateInfo, isCloudConnected, view]);
+  }, [sites, people, vehicles, lastUpdateInfo, isCloudConnected, view, isAdminMode]);
 
   // --- Handlers ---
   const handleEnterAllocation = () => {
+    if (!isAdminMode) { alert('この端末は閲覧専用です。管理者認証が必要です。'); return; }
     setAllocationUpdateTime(new Date().toISOString());
     setInitialPeopleSnapshot(JSON.stringify(people));
     setInitialSitesSnapshot(JSON.stringify(sites));
@@ -549,9 +560,24 @@ if (localTime > 0 && remoteTime < localTime) return;
     setConfirmTarget(null);
   };
 
- const toggleLunch = (id: string) => {
-  setPeople(prev => prev.map(p => p.id === id ? { ...p, hasLunch: !p.hasLunch, lunchOrder: p.hasLunch ? null : p.lunchOrder } : p));
-};
+  const updateLunch = async (id: string, patch: Pick<Person, 'hasLunch' | 'lunchOrder'>) => {
+    setPeople(prev => prev.map(person => person.id === id ? { ...person, ...patch } : person));
+    if (!dbRef.current) return;
+    try {
+      const { getDoc } = await import('firebase/firestore');
+      const { setDoc, docRef } = dbRef.current;
+      const snapshot = await getDoc(docRef);
+      if (!snapshot.exists()) return;
+      const remotePeople = JSON.parse((snapshot.data() as { people?: string }).people || '[]') as Person[];
+      const updated = remotePeople.map(person => person.id === id ? { ...person, ...patch } : person);
+      await setDoc(docRef, { people: JSON.stringify(updated), updatedAt: new Date().toISOString() }, { merge: true });
+    } catch (error) { console.error('弁当情報の保存に失敗:', error); alert('弁当情報の保存に失敗しました。'); }
+  };
+
+  const toggleLunch = (id: string) => {
+    const person = people.find(person => person.id === id);
+    if (person) void updateLunch(id, { hasLunch: !person.hasLunch, lunchOrder: person.hasLunch ? null : person.lunchOrder ?? null });
+  };
 
   const toggleDriver = (personId: string) => {
     setPeople(prev => {
@@ -611,6 +637,7 @@ if (localTime > 0 && remoteTime < localTime) return;
   };
 
   const handleProtectedViewAccess = (view: ViewMode) => {
+    if (!isAdminMode) { alert('この端末は閲覧専用です。管理者認証が必要です。'); return; }
     setPasswordTargetView(view);
     setIsPasswordModalOpen(true);
     setPasswordInput('');
@@ -640,7 +667,8 @@ if (localTime > 0 && remoteTime < localTime) return;
     }
   };
 
-  const handleAllocationComplete = (name: string, acknowledgedDate?: string) => {
+  const handleAllocationComplete = async (name: string, acknowledgedDate?: string) => {
+    if (!isAdminMode || completingRef.current) return;
     const time = new Date().toISOString();
     const date = nextAllocationDate(time);
     if ((!paidLeave.ready || allocationConflicts(people, paidLeave.leaves, date).length > 0) && acknowledgedDate !== date) {
@@ -648,24 +676,35 @@ if (localTime > 0 && remoteTime < localTime) return;
       setPendingLeaveCompletion({ name, date });
       return;
     }
+    completingRef.current = true;
+    const info = { time, name };
+    try {
+      if (!dbRef.current) throw new Error('Cloud is not connected');
+      const { setDoc, docRef } = dbRef.current;
+      await setDoc(docRef, { sites: JSON.stringify(sites), people: JSON.stringify(people), vehicles: JSON.stringify(vehicles), lastUpdateInfo: JSON.stringify(info), updatedAt: time }, { merge: true });
+      boardVersionRef.current = time;
+    } catch (error) {
+      completingRef.current = false;
+      console.error('Firebase保存エラー:', error);
+      alert('配置を保存できませんでした。接続を確認して、もう一度お試しください。');
+      return;
+    }
     setPendingLeaveCompletion(null);
     setIsCompletionModalOpen(false);
     setShowCompletionSuccess(name);
     
     // Record update info
-    setLastUpdateInfo({
-      time,
-      name: name
-    });
+    setLastUpdateInfo(info);
     // Auto backup
     localStorage.setItem('wb_backup_people', JSON.stringify(people));
     localStorage.setItem('wb_backup_sites', JSON.stringify(sites));
     localStorage.setItem('wb_backup_vehicles', JSON.stringify(vehicles));
     localStorage.setItem('wb_backup_time', new Date().toISOString());
-    localStorage.setItem('wb_backup_last_update', JSON.stringify(lastUpdateInfo));
+    localStorage.setItem('wb_backup_last_update', JSON.stringify(info));
 
     setTimeout(() => {
         setShowCompletionSuccess(null);
+        completingRef.current = false;
         setView('WHITEBOARD');
     }, 2000);
   };
@@ -779,7 +818,7 @@ if (localTime > 0 && remoteTime < localTime) return;
                   ...p,
                   siteId: siteId,
                   vehicleId: vehicleId,
-                  isDriver: vehicleId ? p.isDriver : false
+                  isDriver: movingPerson.siteId === siteId && movingPerson.vehicleId === vehicleId ? p.isDriver : false
               };
           }
           return p;
@@ -937,7 +976,7 @@ if (localTime > 0 && remoteTime < localTime) return;
 )}
 </div>
 
-          <div className="flex items-center gap-2 md:gap-4 justify-between md:justify-end">
+          <div className="flex flex-wrap items-center gap-2 md:gap-4 justify-between md:justify-end">
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 border border-gray-200">
                {cloudStatus === 'CONNECTED' ? (
                   <>
@@ -956,7 +995,8 @@ if (localTime > 0 && remoteTime < localTime) return;
                   </>
                )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <LegacyHeaderControls isAdmin={isAdminMode} onAdminChange={handleAdminChange} updatedBy={lastUpdateInfo?.name || '不明'} />
               <button type="button" onClick={() => setIsPaidLeaveOpen(true)} className="flex items-center gap-1 md:gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-2 md:px-4 py-1.5 md:py-2 rounded-lg hover:bg-blue-100 text-xs md:text-sm font-bold">
                 <CalendarDays className="w-4 h-4 md:w-5 md:h-5" /><span>有給休暇</span>
               </button>
@@ -1079,6 +1119,14 @@ if (localTime > 0 && remoteTime < localTime) return;
               );
             })}
           </div>
+          {people.some(person => person.siteId === YASUMI_SITE_ID) && <section className={`bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col overflow-hidden mt-3 md:mt-6 ${isCompactWhiteboard ? 'border-[1.5px]' : 'md:rounded-xl border-2'}`}>
+            <div className="bg-gray-50 border-b border-gray-200 px-3 py-2">
+              <h2 className={`${isCompactWhiteboard ? 'text-xs' : 'text-base md:text-xl'} font-extrabold text-gray-800 border-l-[3px] border-red-400 pl-2`}>休み（{people.filter(person => person.siteId === YASUMI_SITE_ID).length}名）</h2>
+            </div>
+            <div className="p-2 md:p-3 flex flex-wrap gap-1 md:gap-2">
+              {people.filter(person => person.siteId === YASUMI_SITE_ID).map(person => <PersonCard key={person.id} person={person} isCompact={isCompactWhiteboard} />)}
+            </div>
+          </section>}
         </main>
 
         {/* Search Modal */}
@@ -1140,8 +1188,8 @@ if (localTime > 0 && remoteTime < localTime) return;
       ) : (
         <div className="flex flex-col gap-3">
           <div className="flex gap-3">
-            <button onClick={() => { setPeople(prev => prev.map(p => p.id === lunchConfirmTarget.id ? { ...p, hasLunch: true, lunchOrder: '事務所' } : p)); setLunchConfirmTarget(null); }} className="flex-1 py-3 px-4 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700">事務所</button>
-            <button onClick={() => { setPeople(prev => prev.map(p => p.id === lunchConfirmTarget.id ? { ...p, hasLunch: true, lunchOrder: '現場' } : p)); setLunchConfirmTarget(null); }} className="flex-1 py-3 px-4 rounded-lg bg-orange-600 text-white font-bold hover:bg-orange-700">現場</button>
+            <button onClick={() => { void updateLunch(lunchConfirmTarget.id, { hasLunch: true, lunchOrder: '事務所' }); setLunchConfirmTarget(null); }} className="flex-1 py-3 px-4 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700">事務所</button>
+            <button onClick={() => { void updateLunch(lunchConfirmTarget.id, { hasLunch: true, lunchOrder: '現場' }); setLunchConfirmTarget(null); }} className="flex-1 py-3 px-4 rounded-lg bg-orange-600 text-white font-bold hover:bg-orange-700">現場</button>
           </div>
           <button onClick={() => setLunchConfirmTarget(null)} className="py-3 px-4 rounded-lg border border-gray-300 text-gray-700 font-bold hover:bg-gray-100">キャンセル</button>
         </div>
