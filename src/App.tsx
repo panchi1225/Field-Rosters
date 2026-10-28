@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Users, Briefcase, ChevronLeft, Trash2, Plus, LayoutDashboard, ArrowLeftRight, Utensils, Car, Truck, X, Coffee, MapPin, CheckCircle2, ChevronDown, ChevronRight, Ban, Search, Cloud, Download, Upload, Save, AlertCircle, Copy, Check, Lock, CheckCircle, AlertTriangle, Maximize, Minimize, CalendarDays } from 'lucide-react';
 import { Person, Site, Role, ViewMode, Vehicle, FirebaseConfig } from './types';
 import { INITIAL_PEOPLE, INITIAL_SITES, INITIAL_VEHICLES, ROLE_LABELS } from './constants';
-import PaidLeaveCalendar from './PaidLeaveCalendar';
+import PaidLeaveList from './PaidLeaveList';
 import LegacyHeaderControls from './LegacyHeaderControls';
 import { usePaidLeave } from './usePaidLeave';
 import { allocationConflicts, formatLeaveDate, nextAllocationDate, paidLeaveKey, peopleOnLeave } from './paidLeave';
@@ -977,24 +977,6 @@ const restoreFromBackup = async () => {
 </div>
 
           <div className="flex flex-wrap items-center gap-2 md:gap-4 justify-between md:justify-end">
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-gray-100 border border-gray-200">
-               {cloudStatus === 'CONNECTED' ? (
-                  <>
-                    <Cloud className="w-3 h-3 md:w-4 md:h-4 text-green-500" />
-                    <span className="text-[10px] md:text-xs font-bold text-green-700">同期中</span>
-                  </>
-               ) : cloudStatus === 'CONNECTING' ? (
-                  <>
-                    <Cloud className="w-3 h-3 md:w-4 md:h-4 text-yellow-500 animate-pulse" />
-                    <span className="text-[10px] md:text-xs font-bold text-yellow-700">接続中...</span>
-                  </>
-               ) : (
-                  <>
-                    <Cloud className="w-3 h-3 md:w-4 md:h-4 text-gray-400" />
-                    <span className="text-[10px] md:text-xs font-bold text-gray-500">未接続</span>
-                  </>
-               )}
-            </div>
             <div className="flex flex-wrap gap-2">
               <LegacyHeaderControls isAdmin={isAdminMode} onAdminChange={handleAdminChange} updatedBy={lastUpdateInfo?.name || '不明'} />
               <button type="button" onClick={() => setIsPaidLeaveOpen(true)} className="flex items-center gap-1 md:gap-2 bg-blue-50 text-blue-700 border border-blue-200 px-2 md:px-4 py-1.5 md:py-2 rounded-lg hover:bg-blue-100 text-xs md:text-sm font-bold">
@@ -1012,19 +994,12 @@ const restoreFromBackup = async () => {
 
               <button
                 type="button"
-                onClick={() => { setSearchQuery(''); setIsSearchOpen(true); }}
-                className="flex items-center gap-1 md:gap-2 bg-white text-gray-700 border border-gray-300 px-2 md:px-4 py-1.5 md:py-2 rounded-lg hover:bg-gray-50 transition-colors shadow-sm text-xs md:text-sm cursor-pointer"
-              >
-                <Search className="w-4 h-4 md:w-5 md:h-5" />
-                <span>検索</span>
-              </button>
-              <button
-                type="button"
+                aria-label="設定"
+                title="設定"
                 onClick={() => setView('SETTINGS_MENU')}
-                className="flex items-center gap-1 md:gap-2 bg-gray-800 text-white px-2 md:px-4 py-1.5 md:py-2 rounded-lg hover:bg-gray-700 transition-colors shadow-md text-xs md:text-sm cursor-pointer"
+                className="w-11 h-10 flex items-center justify-center bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors shadow-md cursor-pointer"
               >
-                <Settings className="w-4 h-4 md:w-5 md:h-5" />
-                <span>設定</span>
+                <Settings className="w-5 h-5" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -1823,7 +1798,7 @@ const restoreFromBackup = async () => {
         }
       })()}
 
-      {isPaidLeaveOpen && <PaidLeaveCalendar people={people} leaves={paidLeave.leaves} ready={paidLeave.ready} saving={paidLeave.saving} error={paidLeave.error} onSave={paidLeave.save} onClose={() => setIsPaidLeaveOpen(false)} />}
+      {isPaidLeaveOpen && <PaidLeaveList people={people} leaves={paidLeave.leaves} ready={paidLeave.ready} saving={paidLeave.saving} error={paidLeave.error} onSave={paidLeave.save} onClose={() => setIsPaidLeaveOpen(false)} />}
 
       {pendingLeaveCompletion && <div role="dialog" aria-modal="true" aria-labelledby="leave-conflict-title" className="fixed inset-0 bg-black/60 z-[160] flex items-center justify-center p-4">
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-5 md:p-6 max-h-[90vh] overflow-y-auto">

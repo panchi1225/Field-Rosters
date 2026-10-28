@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Lock, Megaphone, X } from 'lucide-react';
+import { Lock, LockOpen, Megaphone, X } from 'lucide-react';
 
 interface Props {
   isAdmin: boolean;
@@ -64,11 +64,11 @@ export default function LegacyHeaderControls({ isAdmin, onAdminChange, updatedBy
   };
 
   return <>
-    <button type="button" onClick={toggleAdmin} className={`flex items-center gap-1 px-2 md:px-3 py-1.5 md:py-2 rounded-lg text-white text-xs md:text-sm shadow-sm ${isAdmin ? 'bg-red-500 hover:bg-red-600' : 'bg-yellow-600 hover:bg-yellow-700'}`}>
-      <Lock className="w-4 h-4" /><span>{isAdmin ? '管理者解除' : '管理者認証'}</span>
+    <button type="button" aria-label={isAdmin ? '管理者解除' : '管理者認証'} aria-pressed={isAdmin} title={isAdmin ? '管理者モードを解除' : '管理者認証'} onClick={toggleAdmin} className={`w-11 h-10 flex items-center justify-center rounded-lg text-white shadow-sm ${isAdmin ? 'bg-red-500 hover:bg-red-600' : 'bg-yellow-600 hover:bg-yellow-700'}`}>
+      {isAdmin ? <LockOpen className="w-5 h-5" aria-hidden="true" /> : <Lock className="w-5 h-5" aria-hidden="true" />}
     </button>
-    <button type="button" title="通知配信" onClick={() => { setOpen(true); setPassword(''); setPasswordError(false); setSent(false); setSendError(''); }} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-2 md:px-3 py-1.5 md:py-2 rounded-lg text-xs md:text-sm shadow-sm">
-      <Megaphone className="w-4 h-4" /><span>LINE通知</span>
+    <button type="button" aria-label="LINE通知" title="通知配信" onClick={() => { setOpen(true); setPassword(''); setPasswordError(false); setSent(false); setSendError(''); }} className="w-11 h-10 flex items-center justify-center bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm">
+      <Megaphone className="w-5 h-5" aria-hidden="true" />
     </button>
     {open && <div role="dialog" aria-modal="true" aria-labelledby="line-notification-title" className="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
